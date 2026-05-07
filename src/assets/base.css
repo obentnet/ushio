@@ -1,0 +1,36 @@
+@font-face {
+  font-family: 'ChillRoundM';
+  src: url('/ChillRoundM.woff2') format('woff2');
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color: #492d22;
+  background: linear-gradient(165deg, #faf5f0 0%, #f1e6db 52%, #d8c7b5 100%);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  font-family:
+    'ChillRoundM',
+    'PingFang SC',
+    'Microsoft YaHei',
+    sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
