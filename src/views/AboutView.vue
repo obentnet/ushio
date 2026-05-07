@@ -9,6 +9,9 @@ const items = [
 
 <template>
   <v-card rounded="xl" elevation="1" class="about-card">
+    <div class="d-flex justify-center">
+      <img src="/favicon.png" alt="" srcset="" class="about-image" />
+    </div>
     <v-card-title class="about-title">
       <v-icon icon="mdi-information-outline" size="18" class="mr-2" />
       关于本站
@@ -40,6 +43,11 @@ const items = [
 </template>
 
 <style scoped>
+.about-image{
+  margin-top: 40px;
+  border-radius: 50%;
+  height: 300px;
+}
 .about-card {
   width: 100%;
 }
