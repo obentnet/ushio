@@ -7,6 +7,26 @@
           <v-btn to="/" variant="text" rounded="pill" class="home-btn" prepend-icon="mdi-home-outline">
             首页
           </v-btn>
+          <v-btn
+            to="/palette"
+            rounded="xl"
+            density="compact"
+            :variant="isActive('/palette') ? 'flat' : 'text'"
+            :class="isActive('/palette') ? 'nav-btn nav-btn-active' : 'nav-btn'"
+          >
+            <Palette :size="16" :stroke-width="2.2" class="mr-2 nav-lucide" />
+            调色板
+          </v-btn>
+          <v-btn
+            to="/about"
+            rounded="xl"
+            density="compact"
+            :variant="isActive('/about') ? 'flat' : 'text'"
+            :class="isActive('/about') ? 'nav-btn nav-btn-active' : 'nav-btn'"
+          >
+          <v-icon icon="mdi-information-outline" size="18" class="mr-2" />
+          关于
+        </v-btn>
         </div>
       </template>
       <v-spacer />
@@ -37,15 +57,6 @@
             />
           </div>
         </v-expand-x-transition>
-        <v-btn
-          to="/about"
-          rounded="xl"
-          density="compact"
-          :variant="isActive('/about') ? 'flat' : 'text'"
-          :class="isActive('/about') ? 'nav-btn nav-btn-active' : 'nav-btn'"
-        >
-          关于
-        </v-btn>
       </v-toolbar-items>
     </v-app-bar>
 
@@ -62,19 +73,17 @@
         <a
           href="https://ueg.ee"
           target="_blank"
-          rel="noopener"
-          class="footer-link"
-          data-link-text="https://ueg.ee"
         >
           UEGEE
         </a>
+        <br/>
       </div>
     </v-footer>
   </v-app>
 </template>
 
 <script setup lang="ts">
-import { Heart } from '@lucide/vue'
+import { Heart, Palette } from '@lucide/vue'
 import { nextTick, ref } from 'vue'
 import { RouterView } from 'vue-router'
 import { useRoute } from 'vue-router'
@@ -198,6 +207,11 @@ function onSearchBlur() {
 .nav-btn-active {
   color: #f7efe7;
   background: #492d22;
+}
+
+.nav-lucide {
+  display: inline-block;
+  vertical-align: middle;
 }
 
 @media (max-width: 720px) {

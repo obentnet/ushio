@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { usePaletteSearchStore } from '@/stores/paletteSearch'
 
 type Palette = {
@@ -30,14 +30,18 @@ type RawPaletteFile = Record<string, RawPaletteGroup>
 
 const selectedPalette = ref<Palette | null>(null)
 const paletteGroups = ref<PaletteGroup[]>([])
+const classGroupOrder = ref<string[]>([])
+const classFiltersRef = ref<HTMLElement | null>(null)
 const dataReady = ref(false)
 const activeClass = ref('全部')
+const showFloatingFilters = ref(false)
 const searchStore = usePaletteSearchStore()
 const snackbar = reactive({
   visible: false,
   text: '',
 })
 const previewText = ref('')
+let classFiltersObserver: IntersectionObserver | null = null
 
 const filteredGroups = computed(() => {
   const keyword = searchStore.normalizedKeyword
@@ -57,7 +61,10 @@ const filteredGroups = computed(() => {
     .filter((group) => group.palettes.length > 0)
 })
 
-const classOptions = computed(() => ['全部', ...paletteGroups.value.map((group) => group.name)])
+const classOptions = computed(() => ['全部', ...classGroupOrder.value])
+const groupsTransitionKey = computed(
+  () => `${activeClass.value}::${searchStore.normalizedKeyword}::${visibleGroups.value.length}`,
+)
 
 const visibleGroups = computed(() => {
   if (activeClass.value === '全部') return filteredGroups.value
@@ -152,6 +159,45 @@ function hexToRgbString(hex: string) {
   return `RGB(${r}, ${g}, ${b})`
 }
 
+function shuffleArray<T>(items: T[]): T[] {
+  const shuffled = [...items]
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const temp = shuffled[i] as T
+    shuffled[i] = shuffled[j] as T
+    shuffled[j] = temp
+  }
+  return shuffled
+}
+
+function setupClassFiltersObserver() {
+  if (!classFiltersRef.value || typeof IntersectionObserver === 'undefined') return
+  classFiltersObserver = new IntersectionObserver(
+    ([entry]) => {
+      if (!entry) return
+      showFloatingFilters.value = !entry.isIntersecting && entry.boundingClientRect.top < 0
+    },
+    {
+      threshold: 0,
+      rootMargin: '0px',
+    },
+  )
+  classFiltersObserver.observe(classFiltersRef.value)
+}
+
+function syncFloatingFiltersByPosition() {
+  const target = classFiltersRef.value
+  if (!target) return
+  const { bottom } = target.getBoundingClientRect()
+  showFloatingFilters.value = bottom <= 0
+}
+
+function teardownClassFiltersObserver() {
+  classFiltersObserver?.disconnect()
+  classFiltersObserver = null
+  window.removeEventListener('scroll', syncFloatingFiltersByPosition)
+}
+
 function normalizePaletteData(raw: RawPaletteFile): PaletteGroup[] {
   return Object.entries(raw).map(([groupId, groupRaw]) => {
     const groupName = groupRaw.class ?? `分组 ${groupId}`
@@ -185,9 +231,12 @@ async function loadPaletteData() {
     const response = await fetch('/data.json', { cache: 'no-store' })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const raw = (await response.json()) as RawPaletteFile
-    paletteGroups.value = normalizePaletteData(raw)
+    const groups = normalizePaletteData(raw)
+    classGroupOrder.value = groups.map((group) => group.name)
+    paletteGroups.value = shuffleArray(groups)
   } catch {
     paletteGroups.value = []
+    classGroupOrder.value = []
     snackbar.text = '读取 data.json 失败'
     snackbar.visible = true
   } finally {
@@ -196,14 +245,23 @@ async function loadPaletteData() {
 }
 
 onMounted(() => {
+  void nextTick(() => {
+    setupClassFiltersObserver()
+    syncFloatingFiltersByPosition()
+    window.addEventListener('scroll', syncFloatingFiltersByPosition, { passive: true })
+  })
   void loadPaletteData()
+})
+
+onBeforeUnmount(() => {
+  teardownClassFiltersObserver()
 })
 
 </script>
 
 <template>
   <section class="home">
-    <div class="class-filters">
+    <div ref="classFiltersRef" class="class-filters">
       <v-btn
         v-for="className in classOptions"
         :key="className"
@@ -216,33 +274,55 @@ onMounted(() => {
         {{ className }}
       </v-btn>
     </div>
+    <transition name="floating-filters-fade">
+      <aside v-if="showFloatingFilters" class="floating-filters" aria-label="快速筛选分组">
+        <transition-group name="filter-chip" tag="div" class="floating-filters-list" appear>
+          <v-btn
+            v-for="(className, index) in classOptions"
+            :key="`floating-${className}`"
+            rounded="pill"
+            size="small"
+            :variant="activeClass === className ? 'flat' : 'text'"
+            :class="activeClass === className ? 'floating-class-btn floating-class-btn-active' : 'floating-class-btn'"
+            :style="{ '--stagger-index': index }"
+            @click="activeClass = className"
+          >
+            {{ className }}
+          </v-btn>
+        </transition-group>
+      </aside>
+    </transition>
 
-    <section v-for="group in visibleGroups" :key="group.id" class="palette-group">
-      <h2 class="group-title">{{ group.name }}</h2>
-      <div class="palette-grid">
-        <v-card
-          v-for="palette in group.palettes"
-          :key="palette.id"
-          class="palette-card"
-          elevation="2"
-          rounded="xl"
-          @click="openPalette(palette)"
-        >
-          <div class="palette-preview" :style="cardStyle(palette)">
-            <div class="palette-side left-side">
-              <span class="color-label">{{ palette.left }}</span>
-            </div>
-            <div class="palette-side right-side">
-              <span class="color-label">{{ palette.right }}</span>
-            </div>
+    <transition name="group-switch" mode="out-in">
+      <div :key="groupsTransitionKey" class="groups-stage">
+        <section v-for="group in visibleGroups" :key="group.id" class="palette-group">
+          <h2 class="group-title">{{ group.name }}</h2>
+          <div class="palette-grid">
+            <v-card
+              v-for="palette in group.palettes"
+              :key="palette.id"
+              class="palette-card"
+              elevation="2"
+              rounded="xl"
+              @click="openPalette(palette)"
+            >
+              <div class="palette-preview" :style="cardStyle(palette)">
+                <div class="palette-side left-side">
+                  <span class="color-label">{{ palette.left }}</span>
+                </div>
+                <div class="palette-side right-side">
+                  <span class="color-label">{{ palette.right }}</span>
+                </div>
+              </div>
+              <div class="palette-meta">
+                <span>{{ palette.name }}</span>
+                <v-icon size="18" icon="mdi-arrow-top-right" />
+              </div>
+            </v-card>
           </div>
-          <div class="palette-meta">
-            <span>{{ palette.name }}</span>
-            <v-icon size="18" icon="mdi-arrow-top-right" />
-          </div>
-        </v-card>
+        </section>
       </div>
-    </section>
+    </transition>
     <v-alert
       v-if="dataReady && visibleGroups.length === 0"
       class="empty-state"
@@ -359,6 +439,85 @@ onMounted(() => {
   background: #492d22;
 }
 
+.groups-stage {
+  display: grid;
+  gap: 20px;
+}
+
+.floating-filters {
+  position: fixed;
+  top: 102px;
+  left: calc(50% + min(620px, calc(50vw - 16px)) + 10px);
+  right: auto;
+  z-index: 24;
+  pointer-events: none;
+}
+
+.floating-filters-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.floating-class-btn {
+  min-width: 74px;
+  color: #492d22;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(73, 45, 34, 0.12);
+  backdrop-filter: blur(7px);
+}
+
+.floating-class-btn-active {
+  color: #f7efe7;
+  background: #492d22;
+  box-shadow: 0 10px 18px rgba(73, 45, 34, 0.22);
+}
+
+.floating-filters-fade-enter-active,
+.floating-filters-fade-leave-active {
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+}
+
+.floating-filters-fade-enter-from,
+.floating-filters-fade-leave-to {
+  opacity: 0;
+  transform: translateX(10px);
+}
+
+.filter-chip-enter-active {
+  transition:
+    opacity 0.26s ease,
+    transform 0.26s ease;
+  transition-delay: calc(var(--stagger-index) * 36ms);
+}
+
+.filter-chip-enter-from {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+
+.group-switch-enter-active,
+.group-switch-leave-active {
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease;
+  will-change: opacity, transform;
+}
+
+.group-switch-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.group-switch-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
 .palette-group {
   display: grid;
   gap: 12px;
@@ -379,13 +538,10 @@ onMounted(() => {
 .palette-card {
   cursor: pointer;
   padding: 12px;
-  transition:
-    transform 0.22s ease,
-    box-shadow 0.22s ease;
+  transition: box-shadow 0.22s ease;
 }
 
 .palette-card:hover {
-  transform: translateY(-5px);
   box-shadow: 0 14px 24px rgba(73, 45, 34, 0.2);
 }
 
@@ -506,6 +662,10 @@ onMounted(() => {
 
   .copy-groups {
     grid-template-columns: 1fr;
+  }
+
+  .floating-filters {
+    display: none;
   }
 
 }
